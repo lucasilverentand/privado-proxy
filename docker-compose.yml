@@ -1,0 +1,16 @@
+services:
+  privado:
+    build: .
+    container_name: privado-proxy
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - PRIVADO_USERNAME=${PRIVADO_USERNAME}
+      - PRIVADO_PASSWORD=${PRIVADO_PASSWORD}
+      - PRIVADO_SERVER=${PRIVADO_SERVER:-nl}
+      - SOCK_PORT=1080
+    ports:
+      - "1080:1080"
