@@ -93,21 +93,45 @@ find_server() {
   local query_lower=$(echo "${query}" | tr '[:upper:]' '[:lower:]')
 
   # Try to find by exact server name first (excluding maintenance servers)
-  server_name=$(jq -r ".[] | select(.maintenance == false) | select(.name == \"${query}\") | .name" "${SERVERS_FILE}" | head -1)
+  server_name=$(jq -r --arg query "${query}" '.[] | select(.maintenance == false) | select(.name == $query) | .name' "${SERVERS_FILE}" | head -1)
+
+  # If not found, check if query is in country-city format (e.g., "nl-ams", "netherlands-amsterdam")
+  if [[ -z "${server_name}" ]] && [[ "${query}" == *-* ]]; then
+    local country_part=$(echo "${query}" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
+    local city_part=$(echo "${query}" | cut -d'-' -f2- | tr '[:upper:]' '[:lower:]')
+    
+    # Only proceed if both parts are non-empty
+    if [[ -n "${country_part}" ]] && [[ -n "${city_part}" ]]; then
+      # Try to find server matching both country (partial) and city (partial) in respective fields
+      server_name=$(jq -r --arg country "${country_part}" --arg city "${city_part}" '.[] | select(.maintenance == false) | select((.country | ascii_downcase | contains($country)) and (.city | ascii_downcase | contains($city))) | .name' "${SERVERS_FILE}" | head -1)
+      
+      # If still not found, try flexible matching where city_part matches server name start 
+      # and country_part matches country field (useful for codes like "nl-ams" where server is "ams-001...")
+      if [[ -z "${server_name}" ]]; then
+        server_name=$(jq -r --arg country "${country_part}" --arg city "${city_part}" '.[] | select(.maintenance == false) | select((.country | ascii_downcase | contains($country)) and (.name | ascii_downcase | startswith($city))) | .name' "${SERVERS_FILE}" | head -1)
+      fi
+      
+      # If still not found with country constraint, try just city_part at start of server name
+      # This handles cases where country code (e.g., "nl") doesn't match the full country name (e.g., "Netherlands")
+      if [[ -z "${server_name}" ]]; then
+        server_name=$(jq -r --arg city "${city_part}" '.[] | select(.maintenance == false) | select(.name | ascii_downcase | startswith($city)) | .name' "${SERVERS_FILE}" | head -1)
+      fi
+    fi
+  fi
 
   # If not found, try by country (case insensitive partial match)
   if [[ -z "${server_name}" ]]; then
-    server_name=$(jq -r ".[] | select(.maintenance == false) | select(.country | ascii_downcase | contains(\"${query_lower}\")) | .name" "${SERVERS_FILE}" | head -1)
+    server_name=$(jq -r --arg query "${query_lower}" '.[] | select(.maintenance == false) | select(.country | ascii_downcase | contains($query)) | .name' "${SERVERS_FILE}" | head -1)
   fi
 
   # If still not found, try by city (case insensitive partial match)
   if [[ -z "${server_name}" ]]; then
-    server_name=$(jq -r ".[] | select(.maintenance == false) | select(.city | ascii_downcase | contains(\"${query_lower}\")) | .name" "${SERVERS_FILE}" | head -1)
+    server_name=$(jq -r --arg query "${query_lower}" '.[] | select(.maintenance == false) | select(.city | ascii_downcase | contains($query)) | .name' "${SERVERS_FILE}" | head -1)
   fi
 
   # If still not found, try partial name match
   if [[ -z "${server_name}" ]]; then
-    server_name=$(jq -r ".[] | select(.maintenance == false) | select(.name | ascii_downcase | contains(\"${query_lower}\")) | .name" "${SERVERS_FILE}" | head -1)
+    server_name=$(jq -r --arg query "${query_lower}" '.[] | select(.maintenance == false) | select(.name | ascii_downcase | contains($query)) | .name' "${SERVERS_FILE}" | head -1)
   fi
 
   if [[ -z "${server_name}" ]]; then
