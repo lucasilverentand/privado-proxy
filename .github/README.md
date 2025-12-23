@@ -69,6 +69,140 @@ secrets:
     file: ./secrets/privado_password.txt
 ```
 
+## Kubernetes Deployment
+
+For Kubernetes deployments, you need to configure additional security settings to allow the required sysctl for WireGuard.
+
+📄 **See [kubernetes-example.yaml](../kubernetes-example.yaml) for a complete example with Service and health checks.**
+
+### Option 1: Using allowedUnsafeSysctls (Recommended)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privado-proxy
+  namespace: default
+spec:
+  containers:
+  - name: privado
+    image: ghcr.io/lucasilverentand/privado-proxy
+    ports:
+    - containerPort: 1080
+      protocol: TCP
+    env:
+    - name: PRIVADO_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: username
+    - name: PRIVADO_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: password
+    - name: PRIVADO_SERVER
+      value: "nl"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+  securityContext:
+    sysctls:
+    - name: net.ipv4.conf.all.src_valid_mark
+      value: "1"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: privado-credentials
+  namespace: default
+type: Opaque
+stringData:
+  username: "your_username"
+  password: "your_password"
+```
+
+**Note**: This requires the sysctl `net.ipv4.conf.all.src_valid_mark` to be allowed at the cluster level. Add it to your cluster's allowed unsafe sysctls:
+
+```yaml
+# For kubelet configuration
+allowedUnsafeSysctls:
+- "net.ipv4.conf.all.src_valid_mark"
+```
+
+### Option 2: Using Privileged Mode (Less Secure)
+
+If you cannot configure `allowedUnsafeSysctls`, you can use privileged mode:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privado-proxy
+  namespace: default
+spec:
+  containers:
+  - name: privado
+    image: ghcr.io/lucasilverentand/privado-proxy
+    ports:
+    - containerPort: 1080
+      protocol: TCP
+    env:
+    - name: PRIVADO_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: username
+    - name: PRIVADO_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: password
+    - name: PRIVADO_SERVER
+      value: "nl"
+    securityContext:
+      privileged: true
+```
+
+⚠️ **Warning**: Privileged mode grants extensive permissions and should be used carefully.
+
+### Option 3: Host Network (Alternative)
+
+If the sysctl is already set on your host, you can use host networking:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privado-proxy
+  namespace: default
+spec:
+  hostNetwork: true
+  containers:
+  - name: privado
+    image: ghcr.io/lucasilverentand/privado-proxy
+    env:
+    - name: PRIVADO_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: username
+    - name: PRIVADO_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: password
+    - name: PRIVADO_SERVER
+      value: "nl"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+```
+
+**Note**: When using host network, the SOCKS5 proxy will be available on the host's port 1080.
+
 ## Configuration
 
 | Variable | Description | Default |
@@ -126,6 +260,21 @@ Ensure you have the required capabilities:
 ```bash
 --cap-add NET_ADMIN
 ```
+
+### sysctl permission denied warnings
+
+If you see warnings like:
+```
+WARNING: Failed to set src_valid_mark sysctl: sysctl: permission denied on key "net.ipv4.conf.all.src_valid_mark"
+```
+
+This is expected in restricted environments like Kubernetes. The container will attempt to use the current sysctl value. Solutions:
+
+1. **Docker**: Run with `--privileged` flag (not recommended for production)
+2. **Kubernetes**: Configure `allowedUnsafeSysctls` (see Kubernetes Deployment section above)
+3. **Host has it enabled**: If your host already has `net.ipv4.conf.all.src_valid_mark=1`, the container will detect and use it
+
+The connection may still work without this sysctl, depending on your network configuration.
 
 ## License
 
