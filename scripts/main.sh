@@ -13,9 +13,9 @@ set_timezone
 
 # Set sysctl for WireGuard policy-based routing
 log "INFO: Setting net.ipv4.conf.all.src_valid_mark=1 for WireGuard"
-error_msg=$(sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>&1)
-if [ $? -ne 0 ]; then
+if ! error_msg=$(sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>&1); then
   log "WARNING: Failed to set src_valid_mark sysctl: ${error_msg}"
+  log "WARNING: WireGuard policy-based routing may not work correctly"
 fi
 
 # Validate required parameters
