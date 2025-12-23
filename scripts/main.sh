@@ -13,7 +13,10 @@ set_timezone
 
 # Set sysctl for WireGuard policy-based routing
 log "INFO: Setting net.ipv4.conf.all.src_valid_mark=1 for WireGuard"
-sysctl -w net.ipv4.conf.all.src_valid_mark=1 >/dev/null 2>&1 || log "WARNING: Failed to set src_valid_mark sysctl"
+error_msg=$(sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>&1)
+if [ $? -ne 0 ]; then
+  log "WARNING: Failed to set src_valid_mark sysctl: ${error_msg}"
+fi
 
 # Validate required parameters
 if [[ -z ${PRIVADO_USERNAME} ]] || [[ -z ${PRIVADO_PASSWORD} ]] || [[ -z ${PRIVADO_SERVER} ]]; then
