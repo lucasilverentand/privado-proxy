@@ -5,8 +5,6 @@ services:
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
     environment:
       - PRIVADO_USERNAME=${PRIVADO_USERNAME}
       - PRIVADO_PASSWORD=${PRIVADO_PASSWORD}

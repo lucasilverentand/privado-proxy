@@ -15,7 +15,6 @@ A Docker image that connects to Privado VPN using WireGuard and exposes a SOCKS5
 ```bash
 docker run -d \
   --cap-add NET_ADMIN \
-  --sysctl net.ipv4.conf.all.src_valid_mark=1 \
   -e PRIVADO_USERNAME="your_username" \
   -e PRIVADO_PASSWORD="your_password" \
   -e PRIVADO_SERVER="nl" \
@@ -35,8 +34,6 @@ services:
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
     environment:
       - PRIVADO_USERNAME=your_username
       - PRIVADO_PASSWORD=your_password
@@ -57,8 +54,6 @@ services:
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
     environment:
       - PRIVADO_SERVER=nl
     secrets:
@@ -129,7 +124,7 @@ The health check automatically attempts to reconnect. If issues persist:
 ### "Operation not permitted" errors
 Ensure you have the required capabilities:
 ```bash
---cap-add NET_ADMIN --sysctl net.ipv4.conf.all.src_valid_mark=1
+--cap-add NET_ADMIN
 ```
 
 ## License
