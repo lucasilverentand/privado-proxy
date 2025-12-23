@@ -25,7 +25,7 @@ metadata:
 spec:
   containers:
   - name: privado
-    image: ghcr.io/lucasilverentand/privado-proxy:2024-12-01  # Or use :latest for automatic updates
+    image: ghcr.io/lucasilverentand/privado-proxy:2024-12-01  # Recommended: pin to specific date tag for production
     ports:
     - containerPort: 1080
       name: socks5
