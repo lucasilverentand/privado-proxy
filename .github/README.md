@@ -73,6 +73,8 @@ secrets:
 
 For Kubernetes deployments, you need to configure additional security settings to allow the required sysctl for WireGuard.
 
+📄 **See [kubernetes-example.yaml](../kubernetes-example.yaml) for a complete example with Service and health checks.**
+
 ### Option 1: Using allowedUnsafeSysctls (Recommended)
 
 ```yaml

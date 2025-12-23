@@ -1,0 +1,85 @@
+# Example Kubernetes deployment for Privado VPN Proxy
+# This example shows the recommended configuration using allowedUnsafeSysctls
+#
+# Prerequisites:
+# 1. Configure your cluster to allow the required sysctl by adding this to kubelet configuration:
+#    allowedUnsafeSysctls:
+#    - "net.ipv4.conf.all.src_valid_mark"
+#
+# 2. Create the secret with your credentials:
+#    kubectl create secret generic privado-credentials \
+#      --from-literal=username='your_username' \
+#      --from-literal=password='your_password'
+#
+# Then apply this manifest:
+#    kubectl apply -f kubernetes-example.yaml
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privado-proxy
+  namespace: default
+  labels:
+    app: privado-proxy
+spec:
+  containers:
+  - name: privado
+    image: ghcr.io/lucasilverentand/privado-proxy:latest
+    ports:
+    - containerPort: 1080
+      name: socks5
+      protocol: TCP
+    env:
+    - name: PRIVADO_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: username
+    - name: PRIVADO_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: privado-credentials
+          key: password
+    - name: PRIVADO_SERVER
+      value: "nl"  # Change to your preferred server location
+    - name: TZ
+      value: "UTC"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+    # Health check to verify the proxy is working
+    livenessProbe:
+      tcpSocket:
+        port: 1080
+      initialDelaySeconds: 30
+      periodSeconds: 60
+    readinessProbe:
+      tcpSocket:
+        port: 1080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+  # Pod-level security context to set the required sysctl
+  securityContext:
+    sysctls:
+    - name: net.ipv4.conf.all.src_valid_mark
+      value: "1"
+  restartPolicy: Always
+
+---
+# Example Service to expose the SOCKS5 proxy
+apiVersion: v1
+kind: Service
+metadata:
+  name: privado-proxy
+  namespace: default
+spec:
+  selector:
+    app: privado-proxy
+  ports:
+  - port: 1080
+    targetPort: 1080
+    protocol: TCP
+    name: socks5
+  type: ClusterIP
