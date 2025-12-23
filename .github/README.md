@@ -89,6 +89,7 @@ secrets:
 You can specify the server using:
 - **Country code**: `nl`, `us`, `de`, `uk`, etc.
 - **Country name**: `netherlands`, `germany`
+- **Country-city format**: `nl-ams`, `us-nyc`, `de-fra` (country code or name, followed by city code or name)
 - **Server hostname**: `nl.privadovpn.com`
 
 ## Requirements
