@@ -13,10 +13,22 @@ set_timezone
 
 # Set sysctl for WireGuard policy-based routing
 # First check if it's already set correctly
-current_value=$(sysctl -n net.ipv4.conf.all.src_valid_mark 2>/dev/null || echo "0")
-if [[ "${current_value}" == "1" ]]; then
-  log "INFO: net.ipv4.conf.all.src_valid_mark is already set to 1"
+if current_value=$(sysctl -n net.ipv4.conf.all.src_valid_mark 2>/dev/null); then
+  if [[ "${current_value}" == "1" ]]; then
+    log "INFO: net.ipv4.conf.all.src_valid_mark is already set to 1"
+  else
+    log "INFO: Setting net.ipv4.conf.all.src_valid_mark=1 for WireGuard (current value: ${current_value})"
+    if ! error_msg=$(sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>&1); then
+      log "WARNING: Failed to set src_valid_mark sysctl: ${error_msg}"
+      log "WARNING: This sysctl requires privileged mode or allowedUnsafeSysctls in Kubernetes"
+      log "WARNING: WireGuard policy-based routing may not work correctly"
+      log "WARNING: See README for Kubernetes deployment instructions"
+    else
+      log "INFO: Successfully set net.ipv4.conf.all.src_valid_mark=1"
+    fi
+  fi
 else
+  # sysctl read failed - try to set it anyway
   log "INFO: Setting net.ipv4.conf.all.src_valid_mark=1 for WireGuard"
   if ! error_msg=$(sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>&1); then
     log "WARNING: Failed to set src_valid_mark sysctl: ${error_msg}"
