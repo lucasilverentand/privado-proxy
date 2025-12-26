@@ -243,6 +243,29 @@ connect_privado() {
   # Add route to VPN server via original gateway (so we can reach it)
   ip route add "${WG_SERVER_IP}/32" via "${default_gw}" dev "${default_if}" 2>/dev/null || true
 
+  # Add routes for local subnets to bypass VPN (required for Kubernetes cluster traffic)
+  log "INFO: PRIVADO: Adding routes for local subnets"
+  IFS=',' read -ra SUBNETS <<< "${LOCAL_SUBNETS}"
+  for subnet in "${SUBNETS[@]}"; do
+    subnet=$(echo "${subnet}" | xargs) # trim whitespace
+    if [[ -n "${subnet}" ]]; then
+      if ip route add "${subnet}" via "${default_gw}" dev "${default_if}" 2>/dev/null; then
+        log "INFO: PRIVADO: Added route for ${subnet}"
+      else
+        log "DEBUG: PRIVADO: Route for ${subnet} already exists or failed"
+      fi
+    fi
+  done
+
+  # Add route for Docker/Kubernetes pod network if different from LOCAL_SUBNETS
+  if [[ -n "${DOCKER_NET}" ]]; then
+    if ip route add "${DOCKER_NET}" via "${default_gw}" dev "${default_if}" 2>/dev/null; then
+      log "INFO: PRIVADO: Added route for DOCKER_NET ${DOCKER_NET}"
+    else
+      log "DEBUG: PRIVADO: Route for DOCKER_NET ${DOCKER_NET} already exists or failed"
+    fi
+  fi
+
   # Replace default route with WireGuard tunnel
   ip route del default 2>/dev/null || true
   ip route add default dev wg0
