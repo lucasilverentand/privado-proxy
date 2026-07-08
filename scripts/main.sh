@@ -48,8 +48,8 @@ else
 fi
 
 # Validate required parameters
-if [[ -z ${PRIVADO_USERNAME} ]] || [[ -z ${PRIVADO_PASSWORD} ]] || [[ -z ${PRIVADO_SERVER} ]]; then
-  log "ERROR: PRIVADO_USERNAME, PRIVADO_PASSWORD, and PRIVADO_SERVER are required"
+if [[ -z ${PRIVADO_USERNAME} ]] || [[ -z ${PRIVADO_PASSWORD} ]]; then
+  log "ERROR: PRIVADO_USERNAME and PRIVADO_PASSWORD are required"
   log "ERROR: Set these via environment variables, Docker secrets, or ${CONFIG_FILE}"
   if [[ "${DASHBOARD_ENABLED,,}" == "true" ]]; then
     log "INFO: Dashboard remains available for browser setup"

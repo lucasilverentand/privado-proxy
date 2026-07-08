@@ -145,13 +145,33 @@ find_server() {
   echo "${server_name}"
 }
 
+# Select a configured server, or automatically choose the first available server.
+select_server() {
+  if [[ -n "${PRIVADO_SERVER}" ]]; then
+    find_server "${PRIVADO_SERVER}"
+    return
+  fi
+
+  local server_name
+  server_name=$(jq -r '.[] | select(.maintenance == false) | .name' "${SERVERS_FILE}" | head -1)
+
+  if [[ -z "${server_name}" ]] || [[ "${server_name}" == "null" ]]; then
+    log "ERROR: PRIVADO: Could not auto-select an available server"
+    exit 1
+  fi
+
+  PRIVADO_SERVER="${server_name}"
+  log "INFO: PRIVADO: No server configured; auto-selected ${server_name}"
+  echo "${server_name}"
+}
+
 # Get WireGuard configuration from server
 get_wireguard_config() {
   log "INFO: PRIVADO: Getting WireGuard configuration"
 
   # Find the server hostname
   local server_hostname
-  server_hostname=$(find_server "${PRIVADO_SERVER}")
+  server_hostname=$(select_server)
   log "INFO: PRIVADO: Selected server: ${server_hostname}"
 
   # Get WireGuard credentials from the server directly

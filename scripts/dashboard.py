@@ -97,7 +97,6 @@ def get_status():
         "credentialsConfigured": bool(
             os.environ.get("PRIVADO_USERNAME")
             and os.environ.get("PRIVADO_PASSWORD")
-            and os.environ.get("PRIVADO_SERVER")
         ),
         "configFile": os.environ.get("CONFIG_FILE", "/config/privado.env"),
         "socksPort": os.environ.get("SOCK_PORT", "1080"),
@@ -106,14 +105,13 @@ def get_status():
     }
 
 
-def save_config(username, password, server):
+def save_config(username, password):
     config_file = os.environ.get("CONFIG_FILE", "/config/privado.env")
     os.makedirs(os.path.dirname(config_file), exist_ok=True)
     content = "\n".join(
         [
             f"PRIVADO_USERNAME={shlex.quote(username)}",
             f"PRIVADO_PASSWORD={shlex.quote(password)}",
-            f"PRIVADO_SERVER={shlex.quote(server)}",
             "",
         ]
     )
@@ -153,6 +151,19 @@ def render_dashboard(status):
     generated = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(status["generatedAt"]))
     state = html.escape(status_label(status["state"]))
     state_class = html.escape(status["state"])
+    credentials_message = (
+        "Privado login is saved. Update it here when you rotate credentials."
+        if status["credentialsConfigured"]
+        else "Enter your Privado login to start the VPN tunnel. Server selection is automatic."
+    )
+    server_display = status["server"] or "Automatic"
+    server_help = (
+        "Explicit location from environment or config."
+        if status["server"]
+        else "The first available non-maintenance Privado server is selected at connection time."
+    )
+    proxy_state = "Running" if status["proxyUp"] else "Stopped"
+    tunnel_state = "Up" if status["wireguardUp"] else "Down"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -164,15 +175,16 @@ def render_dashboard(status):
     <style>
       :root {{
         color-scheme: dark;
-        --bg: #111418;
-        --panel: #1b2027;
-        --panel-2: #222a34;
-        --text: #f5f7fb;
-        --muted: #9aa8b8;
-        --line: #313a46;
-        --ok: #45c486;
-        --warn: #f0b85d;
-        --bad: #ef6b6b;
+        --bg: #0e1116;
+        --panel: #171c23;
+        --panel-2: #202732;
+        --text: #f7f9fc;
+        --muted: #a7b1bf;
+        --line: #303946;
+        --ok: #4fd18b;
+        --warn: #f2bd63;
+        --bad: #f17373;
+        --accent: #6aa4ff;
       }}
       * {{ box-sizing: border-box; }}
       body {{
@@ -183,34 +195,33 @@ def render_dashboard(status):
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }}
       main {{
-        width: min(980px, calc(100vw - 32px));
+        width: min(1080px, calc(100vw - 32px));
         margin: 0 auto;
-        padding: 28px 0 40px;
+        padding: 24px 0 36px;
       }}
       header {{
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 20px;
-        align-items: end;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+        gap: 16px;
+        align-items: stretch;
         border-bottom: 1px solid var(--line);
-        padding-bottom: 22px;
+        padding-bottom: 18px;
       }}
       h1 {{
         margin: 0;
-        font-size: clamp(30px, 5vw, 52px);
-        line-height: 1.05;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.08;
         letter-spacing: 0;
       }}
       .subtitle {{
         max-width: 640px;
-        margin: 10px 0 0;
+        margin: 9px 0 0;
         color: var(--muted);
         font-size: 15px;
         line-height: 1.55;
       }}
       .state {{
-        min-width: 220px;
-        padding: 16px;
+        padding: 18px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--panel);
@@ -238,14 +249,36 @@ def render_dashboard(status):
       }}
       .healthy .dot {{ background: var(--ok); }}
       .down .dot {{ background: var(--bad); }}
+      .scope {{
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }}
+      .scope-item {{
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }}
+      .scope-item strong {{
+        display: block;
+        margin-top: 5px;
+        font-size: 15px;
+        overflow-wrap: anywhere;
+      }}
+      .content {{
+        display: grid;
+        grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+        gap: 16px;
+        margin-top: 18px;
+        align-items: start;
+      }}
       .grid {{
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
-        margin-top: 24px;
       }}
       .metric {{
-        min-height: 116px;
+        min-height: 112px;
         padding: 16px;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -266,22 +299,26 @@ def render_dashboard(status):
         line-height: 1.45;
       }}
       .section {{
-        margin-top: 18px;
         padding: 16px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--panel);
       }}
+      .details {{
+        margin-top: 16px;
+      }}
       form {{
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
         gap: 12px;
-        align-items: end;
-        margin-top: 14px;
+        margin-top: 16px;
+      }}
+      label span {{
+        display: block;
+        margin-bottom: 7px;
       }}
       input {{
         width: 100%;
-        min-height: 42px;
+        min-height: 44px;
         border: 1px solid var(--line);
         border-radius: 6px;
         background: var(--panel-2);
@@ -290,15 +327,25 @@ def render_dashboard(status):
         font: inherit;
       }}
       button {{
-        min-height: 42px;
+        min-height: 44px;
         border: 0;
         border-radius: 6px;
-        background: #2f80ed;
-        color: #fff;
+        background: var(--accent);
+        color: #061223;
         padding: 10px 14px;
         font: inherit;
-        font-weight: 700;
+        font-weight: 750;
         cursor: pointer;
+      }}
+      .note {{
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(106, 164, 255, .08);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
       }}
       .rows {{
         display: grid;
@@ -323,16 +370,14 @@ def render_dashboard(status):
         color: var(--muted);
         font-size: 12px;
       }}
-      @media (max-width: 760px) {{
+      @media (max-width: 860px) {{
         header,
+        .content,
         .grid,
-        form,
         .row {{
           grid-template-columns: 1fr;
         }}
-        .state {{
-          min-width: 0;
-        }}
+        .scope {{ grid-template-columns: 1fr; }}
       }}
     </style>
   </head>
@@ -342,45 +387,49 @@ def render_dashboard(status):
         <div>
           <div class="label">Privado proxy</div>
           <h1>VPN Dashboard</h1>
-          <p class="subtitle">Read-only tunnel and SOCKS5 proxy status. Data refreshes every 30 seconds and never includes credentials.</p>
+          <p class="subtitle">Sign in once, then use this page to confirm the WireGuard tunnel and shared SOCKS5 proxy are ready for dependent apps.</p>
         </div>
         <section class="state {state_class}" aria-label="Connection state">
           <div class="label">Current state</div>
           <div class="status"><span class="dot"></span><span>{state}</span></div>
+          <div class="scope">
+            <div class="scope-item"><div class="label">Login</div><strong>{html.escape("Saved" if status["credentialsConfigured"] else "Required")}</strong></div>
+            <div class="scope-item"><div class="label">Server</div><strong>{html.escape(server_display)}</strong></div>
+            <div class="scope-item"><div class="label">Refresh</div><strong>30s</strong></div>
+          </div>
         </section>
       </header>
 
-      <section class="section">
-        <div class="label">Setup</div>
-        <p class="subtitle">{html.escape("Credentials are configured." if status["credentialsConfigured"] else "Enter Privado credentials to start the VPN tunnel. Values are stored inside the container config volume.")}</p>
-        <form method="post" action="/setup">
-          <label>
-            <span class="label">Username</span>
-            <input name="username" autocomplete="username" value="" required>
-          </label>
-          <label>
-            <span class="label">Password</span>
-            <input name="password" type="password" autocomplete="current-password" required>
-          </label>
-          <label>
-            <span class="label">Server</span>
-            <input name="server" value="{html.escape(status["server"])}" placeholder="de-frankfurt" required>
-          </label>
-          <button type="submit">Save</button>
-        </form>
-      </section>
+      <div class="content">
+        <section class="section">
+          <div class="label">Privado login</div>
+          <p class="subtitle">{html.escape(credentials_message)}</p>
+          <form method="post" action="/setup">
+            <label>
+              <span class="label">Username</span>
+              <input name="username" autocomplete="username" value="" required>
+            </label>
+            <label>
+              <span class="label">Password</span>
+              <input name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <button type="submit">Save login</button>
+          </form>
+          <div class="note">No server is required. {html.escape(server_help)}</div>
+        </section>
 
-      <section class="grid">
-        <div class="metric"><div class="label">Exit IP</div><strong>{html.escape(status["publicIp"])}</strong><span>Fetched through the container route.</span></div>
-        <div class="metric"><div class="label">Server</div><strong>{html.escape(status["server"] or "Unset")}</strong><span>Configured Privado location.</span></div>
-        <div class="metric"><div class="label">Handshake</div><strong>{html.escape(age)}</strong><span>Fresh under 180 seconds.</span></div>
-        <div class="metric"><div class="label">SOCKS5</div><strong>{html.escape("Running" if status["proxyUp"] else "Stopped")}</strong><span>Listening on port {html.escape(status["socksPort"])}.</span></div>
-      </section>
+        <div class="grid">
+          <div class="metric"><div class="label">Exit IP</div><strong>{html.escape(status["publicIp"])}</strong><span>Fetched through the container route.</span></div>
+          <div class="metric"><div class="label">Handshake</div><strong>{html.escape(age)}</strong><span>Fresh under 180 seconds.</span></div>
+          <div class="metric"><div class="label">SOCKS5</div><strong>{html.escape(proxy_state)}</strong><span>Listening on port {html.escape(status["socksPort"])}.</span></div>
+          <div class="metric"><div class="label">WireGuard</div><strong>{html.escape(tunnel_state)}</strong><span>Interface state inside the container.</span></div>
+        </div>
+      </div>
 
-      <section class="section">
+      <section class="section details">
         <div class="label">Tunnel detail</div>
         <div class="rows">
-          <div class="row"><span>WireGuard interface</span><strong>{html.escape("Up" if status["wireguardUp"] else "Down")}</strong></div>
+          <div class="row"><span>Server selection</span><strong>{html.escape(server_display)}</strong></div>
           <div class="row"><span>Received</span><strong>{html.escape(human_bytes(transfer.get("receivedBytes")))}</strong></div>
           <div class="row"><span>Sent</span><strong>{html.escape(human_bytes(transfer.get("sentBytes")))}</strong></div>
           <div class="row"><span>Status API</span><strong><code>/api/status</code></strong></div>
@@ -388,7 +437,7 @@ def render_dashboard(status):
         </div>
       </section>
 
-      <footer>Generated at {html.escape(generated)}. Enable with <code>DASHBOARD_ENABLED=true</code>; set <code>DASHBOARD_PORT</code> to change the listen port.</footer>
+      <footer>Generated at {html.escape(generated)}. Credentials are stored in the app config volume and are never rendered back into the page.</footer>
     </main>
   </body>
 </html>"""
@@ -427,13 +476,12 @@ class Handler(BaseHTTPRequestHandler):
         values = parse_qs(self.rfile.read(length).decode("utf-8"))
         username = values.get("username", [""])[0].strip()
         password = values.get("password", [""])[0]
-        server = values.get("server", [""])[0].strip()
 
-        if not username or not password or not server:
-            self.send_body("text/plain; charset=utf-8", "username, password, and server are required\n", status=400)
+        if not username or not password:
+            self.send_body("text/plain; charset=utf-8", "username and password are required\n", status=400)
             return
 
-        save_config(username, password, server)
+        save_config(username, password)
         restart_main()
         self.send_response(303)
         self.send_header("Location", "/")
