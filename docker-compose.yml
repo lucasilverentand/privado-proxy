@@ -10,5 +10,9 @@ services:
       - PRIVADO_PASSWORD=${PRIVADO_PASSWORD}
       - PRIVADO_SERVER=${PRIVADO_SERVER:-nl}
       - SOCK_PORT=1080
+      - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-false}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-8080}
     ports:
       - "1080:1080"
+      # Enable this together with DASHBOARD_ENABLED=true.
+      # - "8080:8080"

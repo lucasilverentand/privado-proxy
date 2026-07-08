@@ -30,6 +30,10 @@ spec:
     - containerPort: 1080
       name: socks5
       protocol: TCP
+    # Uncomment when DASHBOARD_ENABLED=true.
+    # - containerPort: 8080
+    #   name: dashboard
+    #   protocol: TCP
     env:
     - name: PRIVADO_USERNAME
       valueFrom:
@@ -45,6 +49,12 @@ spec:
       value: "nl"  # Change to your preferred server location
     - name: TZ
       value: "UTC"
+    # Optional read-only dashboard. Expose the dashboard port in the container
+    # and Service if you set this to "true".
+    - name: DASHBOARD_ENABLED
+      value: "false"
+    - name: DASHBOARD_PORT
+      value: "8080"
     securityContext:
       capabilities:
         add:
@@ -82,4 +92,9 @@ spec:
     targetPort: 1080
     protocol: TCP
     name: socks5
+  # Uncomment when DASHBOARD_ENABLED=true.
+  # - port: 8080
+  #   targetPort: 8080
+  #   protocol: TCP
+  #   name: dashboard
   type: ClusterIP

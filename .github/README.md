@@ -7,6 +7,7 @@ A Docker image that connects to Privado VPN using WireGuard and exposes a SOCKS5
 - Fast WireGuard-based VPN connection
 - SOCKS5 proxy on port 1080
 - Automatic reconnection on connection loss
+- Optional read-only dashboard with tunnel and SOCKS5 status
 - Docker secrets support for credentials
 - Multi-platform support (amd64, arm64, arm/v7, arm/v6)
 
@@ -38,8 +39,11 @@ services:
       - PRIVADO_USERNAME=your_username
       - PRIVADO_PASSWORD=your_password
       - PRIVADO_SERVER=nl
+      - DASHBOARD_ENABLED=false
     ports:
       - 1080:1080
+      # Enable this together with DASHBOARD_ENABLED=true.
+      # - 8080:8080
 ```
 
 ### With Docker Secrets
@@ -214,9 +218,32 @@ spec:
 | `PRIVADO_PASSWORD_FILE` | File path for password (Docker secrets) | `/run/secrets/privado_password` |
 | `TZ` | Container timezone | `UTC` |
 | `SOCK_PORT` | SOCKS5 proxy port | `1080` |
+| `DASHBOARD_ENABLED` | Enables the optional read-only web dashboard | `false` |
+| `DASHBOARD_PORT` | Dashboard HTTP port when enabled | `8080` |
 | `DNS` | DNS servers to use | `193.110.81.0,185.253.5.0` |
 | `DOCKER_NET` | Docker network subnet | auto-detected |
 | `LOCAL_SUBNETS` | Local subnets to bypass VPN | `192.168.0.0/16,172.16.0.0/12,10.0.0.0/8` |
+
+## Optional Dashboard
+
+The dashboard is disabled by default. Enable it when you want a local,
+read-only status page for the tunnel and SOCKS5 proxy:
+
+```bash
+docker run -d \
+  --cap-add NET_ADMIN \
+  -e PRIVADO_USERNAME="your_username" \
+  -e PRIVADO_PASSWORD="your_password" \
+  -e PRIVADO_SERVER="nl" \
+  -e DASHBOARD_ENABLED="true" \
+  -p 1080:1080 \
+  -p 8080:8080 \
+  ghcr.io/lucasilverentand/privado-proxy
+```
+
+The dashboard shows connection state, exit IP, configured server, latest
+WireGuard handshake age, SOCKS5 process state, and transfer totals. It also
+serves machine-readable status at `/api/status`. Credentials are never exposed.
 
 ### Server Selection
 

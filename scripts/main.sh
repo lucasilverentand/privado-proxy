@@ -11,6 +11,13 @@ source /scripts/dante.sh
 print_settings
 set_timezone
 
+if [[ "${DASHBOARD_ENABLED,,}" == "true" ]]; then
+  log "INFO: Starting dashboard on port ${DASHBOARD_PORT}"
+  supervisorctl start dashboard || true
+else
+  log "INFO: Dashboard disabled; set DASHBOARD_ENABLED=true to enable it"
+fi
+
 # Set sysctl for WireGuard policy-based routing
 # First check if it's already set correctly
 if current_value=$(sysctl -n net.ipv4.conf.all.src_valid_mark 2>/dev/null); then
@@ -43,7 +50,11 @@ fi
 # Validate required parameters
 if [[ -z ${PRIVADO_USERNAME} ]] || [[ -z ${PRIVADO_PASSWORD} ]] || [[ -z ${PRIVADO_SERVER} ]]; then
   log "ERROR: PRIVADO_USERNAME, PRIVADO_PASSWORD, and PRIVADO_SERVER are required"
-  log "ERROR: Set these via environment variables or Docker secrets"
+  log "ERROR: Set these via environment variables, Docker secrets, or ${CONFIG_FILE}"
+  if [[ "${DASHBOARD_ENABLED,,}" == "true" ]]; then
+    log "INFO: Dashboard remains available for browser setup"
+    while true; do sleep 3600; done
+  fi
   exit 1
 fi
 
@@ -69,3 +80,6 @@ start_dante
 
 log "INFO: Privado VPN Proxy is ready"
 log "INFO: SOCKS5 proxy available on port ${SOCK_PORT}"
+if [[ "${DASHBOARD_ENABLED,,}" == "true" ]]; then
+  log "INFO: Dashboard available on port ${DASHBOARD_PORT}"
+fi

@@ -1,9 +1,21 @@
 #!/bin/bash
 
 TZ=${TZ:-'UTC'}
+CONFIG_FILE=${CONFIG_FILE:-'/config/privado.env'}
+
+if [[ -f ${CONFIG_FILE} ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${CONFIG_FILE}"
+  set +a
+fi
 
 # Dante Settings
 SOCK_PORT=${SOCK_PORT:-"1080"}
+
+# Dashboard Settings
+DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-"false"}
+DASHBOARD_PORT=${DASHBOARD_PORT:-"8080"}
 
 # Privado Settings
 PRIVADO_USERNAME=${PRIVADO_USERNAME:-''}
@@ -41,6 +53,8 @@ print_settings() {
   log "INFO: Settings:"
   log "INFO: TZ: ${TZ}"
   log "INFO: SOCK_PORT: ${SOCK_PORT}"
+  log "INFO: DASHBOARD_ENABLED: ${DASHBOARD_ENABLED}"
+  log "INFO: DASHBOARD_PORT: ${DASHBOARD_PORT}"
   log "INFO: DNS: ${DNS}"
   log "INFO: PRIVADO_SERVER: ${PRIVADO_SERVER}"
   log "INFO: DOCKER_NET: ${DOCKER_NET}"

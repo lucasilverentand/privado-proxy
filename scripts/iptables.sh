@@ -7,6 +7,10 @@ enforce_proxies_iptables() {
   iptables -A INPUT -p tcp --dport ${SOCK_PORT} -j ACCEPT 2>/dev/null || true
   iptables -A INPUT -p udp --dport ${SOCK_PORT} -j ACCEPT 2>/dev/null || true
 
+  if [[ "${DASHBOARD_ENABLED,,}" == "true" ]]; then
+    iptables -A INPUT -p tcp --dport ${DASHBOARD_PORT} -j ACCEPT 2>/dev/null || true
+  fi
+
   # Allow established connections
   iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
   iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
