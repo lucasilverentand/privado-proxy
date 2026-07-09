@@ -5,7 +5,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install dependencies including WireGuard and microsocks
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl jq microsocks supervisor iproute2 iptables python3 \
+    ca-certificates curl jq microsocks supervisor iproute2 iptables python3 \
     net-tools gettext wireguard-tools procps \
     && apt-get clean all && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
