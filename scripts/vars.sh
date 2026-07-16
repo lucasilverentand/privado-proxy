@@ -28,16 +28,18 @@ PRIVADO_PASSWORD_FILE=${PRIVADO_PASSWORD_FILE:-'/run/secrets/privado_password'}
 
 # If no username is provided, check for a secret file
 if [[ -z ${PRIVADO_USERNAME} ]] && [[ -f ${PRIVADO_USERNAME_FILE} ]]; then
-  PRIVADO_USERNAME=$(cat ${PRIVADO_USERNAME_FILE})
+  PRIVADO_USERNAME=$(cat "${PRIVADO_USERNAME_FILE}")
 fi
 
 # If no password is provided, check for a secret file
 if [[ -z ${PRIVADO_PASSWORD} ]] && [[ -f ${PRIVADO_PASSWORD_FILE} ]]; then
-  PRIVADO_PASSWORD=$(cat ${PRIVADO_PASSWORD_FILE})
+  PRIVADO_PASSWORD=$(cat "${PRIVADO_PASSWORD_FILE}")
 fi
 
 # Network Settings
-DNS=${DNS:-'193.110.81.0,185.253.5.0'} # Default DNS0.EU
+DNS=${DNS:-'9.9.9.9,149.112.112.112'} # Default Quad9 resolvers
+HEALTHCHECK_URL=${HEALTHCHECK_URL:-'https://api.ipify.org'}
+HEALTHCHECK_TIMEOUT=${HEALTHCHECK_TIMEOUT:-'20'}
 
 # Networks
 DOCKER_NET=${DOCKER_NET:-''}
@@ -56,11 +58,20 @@ print_settings() {
   log "INFO: DASHBOARD_ENABLED: ${DASHBOARD_ENABLED}"
   log "INFO: DASHBOARD_PORT: ${DASHBOARD_PORT}"
   log "INFO: DNS: ${DNS}"
+  log "INFO: HEALTHCHECK_URL: ${HEALTHCHECK_URL}"
   log "INFO: PRIVADO_SERVER: ${PRIVADO_SERVER}"
   log "INFO: DOCKER_NET: ${DOCKER_NET}"
   log "INFO: LOCAL_SUBNETS: ${LOCAL_SUBNETS}"
   log "INFO: LOCALNET: ${LOCALNET}"
   # Don't log credentials
-  [[ -n ${PRIVADO_USERNAME} ]] && log "INFO: PRIVADO_USERNAME: [set]" || log "INFO: PRIVADO_USERNAME: [not set]"
-  [[ -n ${PRIVADO_PASSWORD} ]] && log "INFO: PRIVADO_PASSWORD: [set]" || log "INFO: PRIVADO_PASSWORD: [not set]"
+  if [[ -n ${PRIVADO_USERNAME} ]]; then
+    log "INFO: PRIVADO_USERNAME: [set]"
+  else
+    log "INFO: PRIVADO_USERNAME: [not set]"
+  fi
+  if [[ -n ${PRIVADO_PASSWORD} ]]; then
+    log "INFO: PRIVADO_PASSWORD: [set]"
+  else
+    log "INFO: PRIVADO_PASSWORD: [not set]"
+  fi
 }

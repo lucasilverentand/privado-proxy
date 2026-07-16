@@ -6,15 +6,151 @@ API_KEY="9f994c466340e8f2ed60a99396fecb6a"
 USER_AGENT="App: 3.0.0 (576942783), macOS: Version 12.4 (Build 21F79)"
 
 # Data directory for storing session data
-DATA_DIR="/run/privado"
+DATA_DIR=${DATA_DIR:-"/run/privado"}
 TOKEN_FILE="${DATA_DIR}/token.json"
 SERVERS_FILE="${DATA_DIR}/servers.json"
-WG_CONFIG="/etc/wireguard/wg0.conf"
+NETWORK_STATE_FILE="${DATA_DIR}/original-default-route"
+WG_CONFIG=${WG_CONFIG:-"/etc/wireguard/wg0.conf"}
 
 # Initialize data directory
 init_privado() {
-  mkdir -p ${DATA_DIR}
+  mkdir -p "${DATA_DIR}"
   mkdir -p /etc/wireguard
+}
+
+# Extract the gateway and interface from an iproute2 route line.
+route_gateway_and_interface() {
+  local route="${1}"
+  local gateway=""
+  local interface=""
+  local -a fields
+
+  read -r -a fields <<< "${route}"
+  for ((index = 0; index < ${#fields[@]}; index++)); do
+    case "${fields[index]}" in
+      via)
+        gateway="${fields[index + 1]:-}"
+        ;;
+      dev)
+        interface="${fields[index + 1]:-}"
+        ;;
+    esac
+  done
+
+  if [[ -n "${gateway}" ]] && [[ -n "${interface}" ]] && [[ "${interface}" != "wg0" ]]; then
+    printf '%s %s\n' "${gateway}" "${interface}"
+  fi
+}
+
+# Recover the pre-tunnel route from persisted state or the endpoint route that
+# survives when a container restarts inside the same network namespace.
+find_original_default_route() {
+  local gateway=""
+  local interface=""
+  local route=""
+  local endpoint=""
+  local endpoint_ip=""
+
+  if [[ -s "${NETWORK_STATE_FILE}" ]]; then
+    read -r gateway interface < "${NETWORK_STATE_FILE}" || true
+    if [[ -n "${gateway}" ]] && [[ -n "${interface}" ]] && [[ "${interface}" != "wg0" ]]; then
+      printf '%s %s\n' "${gateway}" "${interface}"
+      return 0
+    fi
+  fi
+
+  route=$(ip -4 route show default 2>/dev/null | awk '$0 !~ / dev wg0( |$)/ { print; exit }')
+  if [[ -n "${route}" ]]; then
+    route_gateway_and_interface "${route}"
+    return 0
+  fi
+
+  endpoint=$(wg show wg0 endpoints 2>/dev/null | awk 'NR == 1 { print $2 }' || true)
+  endpoint_ip="${endpoint%:*}"
+  if [[ "${endpoint_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    route=$(ip -4 route show table main "${endpoint_ip}/32" 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "${route}" ]]; then
+    route=$(ip -4 route show table main 2>/dev/null | awk '
+      / via / && $0 !~ / dev wg0( |$)/ { print; exit }
+    ')
+  fi
+
+  route_gateway_and_interface "${route}"
+}
+
+# Remove every piece of WireGuard state that can outlive main.sh. This handles
+# both the current direct-default-route setup and legacy wg-quick fwmark rules.
+cleanup_wireguard_state() {
+  log "INFO: PRIVADO: Cleaning up stale WireGuard state"
+
+  local current_default=""
+  local recovery_route=""
+  local gateway=""
+  local interface=""
+  local endpoint=""
+  local endpoint_ip=""
+  local interface_address=""
+  local fwmark=""
+  local mark=""
+  local -a marks=("51820")
+
+  current_default=$(ip -4 route show default 2>/dev/null | head -1)
+  recovery_route=$(find_original_default_route || true)
+  read -r gateway interface <<< "${recovery_route}"
+
+  endpoint=$(wg show wg0 endpoints 2>/dev/null | awk 'NR == 1 { print $2 }' || true)
+  endpoint_ip="${endpoint%:*}"
+  interface_address=$(ip -o -4 addr show dev wg0 2>/dev/null | awk 'NR == 1 { print $4 }' || true)
+  fwmark=$(wg show wg0 fwmark 2>/dev/null || true)
+  if [[ -n "${fwmark}" ]] && [[ "${fwmark}" != "off" ]] && [[ "${fwmark}" != "51820" ]]; then
+    marks+=("${fwmark}")
+  fi
+
+  # Let wg-quick remove everything it recognizes, then explicitly remove
+  # partial state in case its config file is absent or incomplete.
+  wg-quick down wg0 >/dev/null 2>&1 || true
+
+  for mark in "${marks[@]}"; do
+    while ip -4 rule del not fwmark "${mark}" table "${mark}" 2>/dev/null; do :; done
+    ip -4 route flush table "${mark}" 2>/dev/null || true
+
+    while iptables -D OUTPUT ! -o wg0 -m mark ! --mark "${mark}" \
+      -m addrtype ! --dst-type LOCAL -j REJECT 2>/dev/null; do :; done
+    while iptables -t mangle -D POSTROUTING -m mark --mark "${mark}" \
+      -p udp -j CONNMARK --save-mark 2>/dev/null; do :; done
+  done
+
+  while ip -4 rule del table main suppress_prefixlength 0 2>/dev/null; do :; done
+  while iptables -t mangle -D PREROUTING -p udp -m conntrack \
+    --ctstate RELATED,ESTABLISHED -j CONNMARK --restore-mark 2>/dev/null; do :; done
+
+  if [[ -n "${interface_address}" ]]; then
+    while iptables -t raw -D PREROUTING ! -i wg0 -d "${interface_address}" \
+      -m addrtype ! --src-type LOCAL -j DROP 2>/dev/null; do :; done
+  fi
+
+  ip link del wg0 2>/dev/null || true
+
+  if [[ -z "${current_default}" ]] || [[ "${current_default}" == *" dev wg0"* ]]; then
+    if [[ -n "${gateway}" ]] && [[ -n "${interface}" ]]; then
+      if ip -4 route replace default via "${gateway}" dev "${interface}"; then
+        log "INFO: PRIVADO: Restored default route via ${gateway} dev ${interface}"
+      else
+        log "WARNING: PRIVADO: Failed to restore default route via ${gateway} dev ${interface}"
+      fi
+    else
+      log "WARNING: PRIVADO: No original default route could be recovered"
+    fi
+  fi
+
+  if [[ "${endpoint_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip -4 route del "${endpoint_ip}/32" 2>/dev/null || true
+  fi
+
+  rm -f "${NETWORK_STATE_FILE}"
+  return 0
 }
 
 # Login to Privado API and get access token
@@ -90,15 +226,18 @@ find_server() {
   local server_name
 
   # Convert query to lowercase for comparison
-  local query_lower=$(echo "${query}" | tr '[:upper:]' '[:lower:]')
+  local query_lower
+  query_lower=$(echo "${query}" | tr '[:upper:]' '[:lower:]')
 
   # Try to find by exact server name first (excluding maintenance servers)
   server_name=$(jq -r --arg query "${query}" '.[] | select(.maintenance == false) | select(.name == $query) | .name' "${SERVERS_FILE}" | head -1)
 
   # If not found, check if query is in country-city format (e.g., "nl-ams", "netherlands-amsterdam")
   if [[ -z "${server_name}" ]] && [[ "${query}" == *-* ]]; then
-    local country_part=$(echo "${query}" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
-    local city_part=$(echo "${query}" | cut -d'-' -f2- | tr '[:upper:]' '[:lower:]')
+    local country_part
+    local city_part
+    country_part=$(echo "${query}" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
+    city_part=$(echo "${query}" | cut -d'-' -f2- | tr '[:upper:]' '[:lower:]')
     
     # Only proceed if both parts are non-empty
     if [[ -n "${country_part}" ]] && [[ -n "${city_part}" ]]; then
@@ -205,9 +344,6 @@ get_wireguard_config() {
   # Construct endpoint from server IP and port
   WG_ENDPOINT="${WG_SERVER_IP}:${WG_SERVER_PORT}"
 
-  # Use configured DNS
-  WG_DNS="${DNS}"
-
   if [[ -z "${WG_PRIVATE_KEY}" ]] || [[ -z "${WG_ADDRESS}" ]] || [[ -z "${WG_SERVER_PUBLIC_KEY}" ]] || [[ -z "${WG_SERVER_IP}" ]]; then
     log "ERROR: PRIVADO: Incomplete WireGuard configuration received"
     log "DEBUG: Response: ${response}"
@@ -217,8 +353,6 @@ get_wireguard_config() {
   log "INFO: PRIVADO: WireGuard configuration obtained"
   log "INFO: PRIVADO: Interface IP: ${WG_ADDRESS}"
 
-  # Save server hostname for later use
-  PRIVADO_SERVER_HOSTNAME="${server_hostname}"
 }
 
 # Generate WireGuard configuration file
@@ -249,19 +383,43 @@ connect_privado() {
   ip link del wg0 2>/dev/null || true
 
   # Get current default gateway info
-  local default_gw default_if
-  default_gw=$(ip route | grep "^default" | awk '{print $3}' | head -1)
-  default_if=$(ip route | grep "^default" | awk '{print $5}' | head -1)
+  local default_route default_gw default_if
+  default_route=$(ip -4 route show default | head -1)
+  default_gw=$(awk '{ for (i = 1; i <= NF; i++) if ($i == "via") print $(i + 1) }' <<< "${default_route}")
+  default_if=$(awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") print $(i + 1) }' <<< "${default_route}")
+
+  if [[ -z "${default_gw}" ]] || [[ -z "${default_if}" ]] || [[ "${default_if}" == "wg0" ]]; then
+    log "ERROR: PRIVADO: Cannot determine the original default route"
+    exit 1
+  fi
+
+  mkdir -p "${DATA_DIR}"
+  printf '%s %s\n' "${default_gw}" "${default_if}" > "${NETWORK_STATE_FILE}"
   log "INFO: PRIVADO: Original gateway: ${default_gw} via ${default_if}"
 
   # Create WireGuard interface
-  ip link add wg0 type wireguard
-  wg setconf wg0 "${WG_CONFIG}"
-  ip addr add "${WG_ADDRESS}/32" dev wg0
-  ip link set wg0 up
+  if ! ip link add wg0 type wireguard; then
+    log "ERROR: PRIVADO: Failed to create WireGuard interface"
+    exit 1
+  fi
+  if ! wg setconf wg0 "${WG_CONFIG}"; then
+    log "ERROR: PRIVADO: Failed to configure WireGuard interface"
+    exit 1
+  fi
+  if ! ip addr add "${WG_ADDRESS}/32" dev wg0; then
+    log "ERROR: PRIVADO: Failed to assign WireGuard address"
+    exit 1
+  fi
+  if ! ip link set wg0 up; then
+    log "ERROR: PRIVADO: Failed to bring up WireGuard interface"
+    exit 1
+  fi
 
   # Add route to VPN server via original gateway (so we can reach it)
-  ip route add "${WG_SERVER_IP}/32" via "${default_gw}" dev "${default_if}" 2>/dev/null || true
+  if ! ip -4 route replace "${WG_SERVER_IP}/32" via "${default_gw}" dev "${default_if}"; then
+    log "ERROR: PRIVADO: Failed to preserve the route to the VPN endpoint"
+    exit 1
+  fi
 
   # Add routes for local subnets to bypass VPN (required for Kubernetes cluster traffic)
   log "INFO: PRIVADO: Adding routes for local subnets"
@@ -287,8 +445,10 @@ connect_privado() {
   fi
 
   # Replace default route with WireGuard tunnel
-  ip route del default 2>/dev/null || true
-  ip route add default dev wg0
+  if ! ip -4 route replace default dev wg0; then
+    log "ERROR: PRIVADO: Failed to route traffic through WireGuard"
+    exit 1
+  fi
 
   if ! ip link show wg0 up &>/dev/null; then
     log "ERROR: PRIVADO: Failed to bring up WireGuard interface"
@@ -301,7 +461,7 @@ connect_privado() {
 # Disconnect from VPN
 disconnect_privado() {
   log "INFO: PRIVADO: Disconnecting WireGuard"
-  wg-quick down wg0 2>/dev/null || true
+  cleanup_wireguard_state
 }
 
 # Check if VPN connection is active

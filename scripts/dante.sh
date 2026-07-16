@@ -10,5 +10,8 @@ setup_dante() {
 
 start_dante() {
   log "INFO: PROXY: Starting microsocks"
-  supervisorctl start microsocks
+  if ! supervisorctl start microsocks; then
+    log "ERROR: PROXY: Failed to start microsocks"
+    exit 1
+  fi
 }
