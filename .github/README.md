@@ -6,7 +6,8 @@ A Docker image that connects to Privado VPN using WireGuard and exposes a SOCKS5
 
 - Fast WireGuard-based VPN connection
 - SOCKS5 proxy on port 1080
-- Automatic reconnection on connection loss
+- Automatic cleanup and reconnection after partial tunnel failures
+- End-to-end health checks for the tunnel, SOCKS DNS, and HTTPS trust
 - Optional read-only dashboard with tunnel and SOCKS5 status
 - Docker secrets support for credentials
 - Multi-platform support (amd64, arm64, arm/v7, arm/v6)
@@ -220,7 +221,9 @@ spec:
 | `SOCK_PORT` | SOCKS5 proxy port | `1080` |
 | `DASHBOARD_ENABLED` | Enables the optional read-only web dashboard | `false` |
 | `DASHBOARD_PORT` | Dashboard HTTP port when enabled | `8080` |
-| `DNS` | DNS servers to use | `193.110.81.0,185.253.5.0` |
+| `DNS` | Tunnel DNS servers to use | `9.9.9.9,149.112.112.112` |
+| `HEALTHCHECK_URL` | HTTPS hostname requested through SOCKS | `https://api.ipify.org` |
+| `HEALTHCHECK_TIMEOUT` | End-to-end probe timeout in seconds | `20` |
 | `DOCKER_NET` | Docker network subnet | auto-detected |
 | `LOCAL_SUBNETS` | Local subnets to bypass VPN | `192.168.0.0/16,172.16.0.0/12,10.0.0.0/8` |
 
@@ -273,12 +276,15 @@ curl --proxy socks5h://localhost:1080 https://ifconfig.me
 
 ### Container exits immediately
 Check logs with `docker logs <container>`. Common issues:
-- Missing credentials (PRIVADO_USERNAME, PRIVADO_PASSWORD, PRIVADO_SERVER)
+- Missing credentials (`PRIVADO_USERNAME`, `PRIVADO_PASSWORD`)
 - Invalid Privado VPN credentials
 - Server not found (check country code spelling)
 
 ### Connection drops
-The health check automatically attempts to reconnect. If issues persist:
+The health check verifies a recent WireGuard handshake and an HTTPS hostname
+request through SOCKS. If it fails, it asks supervisor to restart `main.sh`;
+startup first restores the original route and removes stale WireGuard policy and
+firewall state. If issues persist:
 - Check Privado VPN service status
 - Try a different server location
 - Verify your Privado VPN subscription is active

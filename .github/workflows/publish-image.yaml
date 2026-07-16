@@ -12,7 +12,34 @@ permissions:
   packages: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/*.sh tests/test_cleanup_integration.sh
+          shellcheck scripts/*.sh tests/test_cleanup_integration.sh
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Build validation image
+        run: docker build --tag privado-proxy:test .
+
+      - name: Recreate stale tunnel state
+        run: |
+          docker run --rm --cap-add NET_ADMIN \
+            --volume "${PWD}/tests:/tests:ro" \
+            --entrypoint /bin/bash \
+            privado-proxy:test \
+            /tests/test_cleanup_integration.sh
+
   build-and-publish:
+    needs: quality
     runs-on: ubuntu-latest
 
     steps:

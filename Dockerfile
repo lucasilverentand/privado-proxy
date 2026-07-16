@@ -7,6 +7,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl jq microsocks supervisor iproute2 iptables python3 \
     net-tools gettext wireguard-tools procps \
+    && update-ca-certificates \
+    && test -s /etc/ssl/certs/ca-certificates.crt \
     && apt-get clean all && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create user and group

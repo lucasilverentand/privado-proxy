@@ -8,6 +8,27 @@ source /scripts/iptables.sh
 source /scripts/privado.sh
 source /scripts/dante.sh
 
+cleanup_after_failure() {
+  local status=$?
+  trap - EXIT
+
+  if [[ ${status} -ne 0 ]]; then
+    log "WARNING: PRIVADO: Startup failed; restoring the original network state"
+    supervisorctl stop microsocks >/dev/null 2>&1 || true
+    cleanup_wireguard_state
+  fi
+
+  exit "${status}"
+}
+
+trap cleanup_after_failure EXIT
+
+# A supervisor restart reuses the container network namespace. Stop the proxy
+# before opening the clear route, then remove stale tunnel state before any API
+# or DNS request is attempted.
+supervisorctl stop microsocks >/dev/null 2>&1 || true
+cleanup_wireguard_state
+
 print_settings
 set_timezone
 
